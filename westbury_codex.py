@@ -29,7 +29,7 @@ WESTBURY_QUERY_URL = os.environ.get("WESTBURY_QUERY_URL", "http://100.98.84.84:8
 _BASE_DIR = Path(__file__).resolve().parent
 _VSCODE_DIR = _BASE_DIR.parent
 _DEFAULT_MCP_SCRIPT = _VSCODE_DIR / "rag_testing" / "mcp_server_westbury.py"
-_DEFAULT_MCP_PYTHON = _VSCODE_DIR / "rag_testing" / "venv" / "bin" / "python"
+_DEFAULT_MCP_PYTHON = _VSCODE_DIR / "rag_testing" / "LightRAG" / ".venv" / "bin" / "python"
 WESTBURY_MCP_SCRIPT = Path(
     os.environ.get("WESTBURY_MCP_SCRIPT", str(_DEFAULT_MCP_SCRIPT))
 ).expanduser()
