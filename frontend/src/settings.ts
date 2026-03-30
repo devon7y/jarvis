@@ -10,6 +10,9 @@
 // ---------------------------------------------------------------------------
 
 interface StatusResponse {
+  secondary_agent_name: string;
+  secondary_agent_cli: string;
+  secondary_agent_installed: boolean;
   claude_code_installed: boolean;
   codex_installed: boolean;
   westbury_mcp_configured: boolean;
@@ -122,7 +125,7 @@ function buildPanelHTML(): string {
         <section class="settings-section" id="section-status">
           <h3>Connection Status</h3>
           <div class="status-grid">
-            <div class="status-row"><span class="status-dot" id="status-claude-cli"></span><span>Claude Code CLI</span></div>
+            <div class="status-row"><span class="status-dot" id="status-secondary-agent"></span><span>Coding Agent</span><span class="status-detail" id="status-secondary-agent-detail"></span></div>
             <div class="status-row"><span class="status-dot" id="status-codex-cli"></span><span>Codex CLI</span></div>
             <div class="status-row"><span class="status-dot" id="status-westbury"></span><span>Westbury Database</span><span class="status-detail" id="status-westbury-detail"></span></div>
             <div class="status-row"><span class="status-dot" id="status-calendar"></span><span>Apple Calendar</span></div>
@@ -212,7 +215,7 @@ async function loadStatus() {
   try {
     const status = await apiGet<StatusResponse>("/api/settings/status");
 
-    setDotStatus("status-claude-cli", status.claude_code_installed ? "green" : "red");
+    setDotStatus("status-secondary-agent", status.secondary_agent_installed ? "green" : "red");
     setDotStatus("status-codex-cli", status.codex_installed ? "green" : "red");
     setDotStatus(
       "status-westbury",
@@ -225,6 +228,9 @@ async function loadStatus() {
 
     const serverDetail = document.getElementById("status-server-detail");
     if (serverDetail) serverDetail.textContent = `port ${status.server_port} | up ${formatUptime(status.uptime_seconds)}`;
+
+    const secondaryAgentDetail = document.getElementById("status-secondary-agent-detail");
+    if (secondaryAgentDetail) secondaryAgentDetail.textContent = status.secondary_agent_name || status.secondary_agent_cli;
 
     const westburyDetail = document.getElementById("status-westbury-detail");
     if (westburyDetail) {
