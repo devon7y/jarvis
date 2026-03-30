@@ -19,6 +19,7 @@ JARVIS connects to your Apple Calendar, Mail, and Notes. It can browse the web, 
 - **Builds software** -- say "build me a landing page" and watch Claude Code do the work
 - **Reads your calendar** -- "What's on my schedule today?"
 - **Reads your email** -- "Any unread messages?" (read-only, by design)
+- **Queries the Westbury papers database** -- ask literature questions grounded in a private research corpus
 - **Browses the web** -- "Search for the best restaurants in Austin"
 - **Manages tasks** -- "Remind me to call the client tomorrow"
 - **Takes notes** -- "Save that as a note"
@@ -36,6 +37,7 @@ JARVIS connects to your Apple Calendar, Mail, and Notes. It can browse the web, 
 - **Anthropic API key** -- powers the AI brain ([get one here](https://console.anthropic.com/))
 - **Fish Audio API key** -- powers the voice ([get one here](https://fish.audio/))
 - **Claude Code CLI** -- for spawning dev tasks ([install here](https://docs.anthropic.com/en/docs/claude-code))
+- **Codex CLI** -- for Westbury database agent runs (optional, required for `ACTION:DATABASE`)
 
 ## Quick Start (with Claude Code)
 
@@ -150,6 +152,7 @@ Microphone -> Web Speech API -> WebSocket -> FastAPI -> Claude (Haiku) -> Fish A
 | `actions.py` | System actions (Terminal, Chrome, Claude Code) |
 | `browser.py` | Playwright web automation |
 | `work_mode.py` | Persistent Claude Code sessions |
+| `westbury_codex.py` | Codex + Westbury MCP database integration |
 | `planner.py` | Multi-step task planning with smart questions |
 
 ## Features in Detail

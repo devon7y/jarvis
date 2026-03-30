@@ -11,6 +11,9 @@
 
 interface StatusResponse {
   claude_code_installed: boolean;
+  codex_installed: boolean;
+  westbury_mcp_configured: boolean;
+  westbury_server_reachable: boolean;
   calendar_accessible: boolean;
   mail_accessible: boolean;
   notes_accessible: boolean;
@@ -18,6 +21,8 @@ interface StatusResponse {
   task_count: number;
   server_port: number;
   uptime_seconds: number;
+  westbury_query_url: string;
+  westbury_server_llm: string;
   env_keys_set: {
     anthropic: boolean;
     fish_audio: boolean;
@@ -118,6 +123,8 @@ function buildPanelHTML(): string {
           <h3>Connection Status</h3>
           <div class="status-grid">
             <div class="status-row"><span class="status-dot" id="status-claude-cli"></span><span>Claude Code CLI</span></div>
+            <div class="status-row"><span class="status-dot" id="status-codex-cli"></span><span>Codex CLI</span></div>
+            <div class="status-row"><span class="status-dot" id="status-westbury"></span><span>Westbury Database</span><span class="status-detail" id="status-westbury-detail"></span></div>
             <div class="status-row"><span class="status-dot" id="status-calendar"></span><span>Apple Calendar</span></div>
             <div class="status-row"><span class="status-dot" id="status-mail"></span><span>Apple Mail</span></div>
             <div class="status-row"><span class="status-dot" id="status-notes"></span><span>Apple Notes</span></div>
@@ -206,6 +213,11 @@ async function loadStatus() {
     const status = await apiGet<StatusResponse>("/api/settings/status");
 
     setDotStatus("status-claude-cli", status.claude_code_installed ? "green" : "red");
+    setDotStatus("status-codex-cli", status.codex_installed ? "green" : "red");
+    setDotStatus(
+      "status-westbury",
+      status.westbury_mcp_configured && status.westbury_server_reachable ? "green" : "yellow"
+    );
     setDotStatus("status-calendar", status.calendar_accessible ? "green" : "red");
     setDotStatus("status-mail", status.mail_accessible ? "green" : "red");
     setDotStatus("status-notes", status.notes_accessible ? "green" : "red");
@@ -213,6 +225,21 @@ async function loadStatus() {
 
     const serverDetail = document.getElementById("status-server-detail");
     if (serverDetail) serverDetail.textContent = `port ${status.server_port} | up ${formatUptime(status.uptime_seconds)}`;
+
+    const westburyDetail = document.getElementById("status-westbury-detail");
+    if (westburyDetail) {
+      if (!status.codex_installed) {
+        westburyDetail.textContent = "Codex missing";
+      } else if (!status.westbury_mcp_configured) {
+        westburyDetail.textContent = "MCP not configured";
+      } else if (!status.westbury_server_reachable) {
+        westburyDetail.textContent = "server unreachable";
+      } else {
+        westburyDetail.textContent = status.westbury_server_llm
+          ? `${status.westbury_server_llm} | ready`
+          : "ready";
+      }
+    }
 
     // API key status dots
     setDotStatus("status-anthropic", status.env_keys_set.anthropic ? "green" : "red");

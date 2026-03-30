@@ -52,6 +52,7 @@ from memory import (
 from notes_access import get_recent_notes, read_note, search_notes_apple, create_apple_note
 from dispatch_registry import DispatchRegistry
 from planner import TaskPlanner, detect_planning_mode, BYPASS_PHRASES
+from westbury_codex import get_westbury_status, run_database_query
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 log = logging.getLogger("jarvis")
@@ -100,6 +101,7 @@ You ARE the JARVIS project at {project_dir} on {user_name}'s computer. Your code
 YOUR CAPABILITIES (these are REAL and ACTIVE — you CAN do all of these RIGHT NOW):
 - You CAN open Terminal.app via AppleScript
 - You CAN open Google Chrome and browse any URL or search query
+- You CAN query a private Westbury papers research database covering humor, psycholinguistics, entropy, word frequency, semantic memory, and related cognitive science
 - You CAN spawn Claude Code in a Terminal window for coding tasks
 - You CAN create project folders on the Desktop
 - You CAN check Desktop projects and their git status
@@ -185,6 +187,7 @@ When you decide the user needs something DONE (not just discussed), include an a
 - [ACTION:BUILD] description — when user wants a project built. Claude Code does the work.
 - [ACTION:BROWSE] url or search query — when user wants to see a webpage or search result in Chrome
 - [ACTION:RESEARCH] detailed research brief — when user wants real research with real data. Claude Code will browse the web, find real listings/data, and create a report document. Give it a detailed brief of what to find.
+- [ACTION:DATABASE] research question — when user wants an answer grounded in the Westbury papers database. A Codex research agent will query that database, refine the search if needed, and report back.
 - [ACTION:OPEN_TERMINAL] — when user just wants a fresh Claude Code terminal with no specific project
 - [ACTION:PROMPT_PROJECT] project_name ||| prompt — THIS IS YOUR MOST POWERFUL ACTION. Use it whenever the user wants to work on, jump into, resume, check on, or interact with ANY existing project. You connect directly to Claude Code in that project and can read its response. Craft a clear prompt based on what the user wants. Examples:
   "jump into client engine" → [ACTION:PROMPT_PROJECT] The Client Engine ||| What is the current state of this project? Summarize what was being worked on most recently.
@@ -200,6 +203,8 @@ When you decide the user needs something DONE (not just discussed), include an a
 - [ACTION:CREATE_NOTE] title ||| body — create a new Apple Note. For saving plans, ideas, lists.
   "save that as a note" → [ACTION:CREATE_NOTE] Day Plan March 19 ||| Morning: client calls. Afternoon: TikTok dashboard. Evening: JARVIS improvements.
 - [ACTION:READ_NOTE] title search — read an existing Apple Note by title keyword.
+
+Use [ACTION:DATABASE] for questions about the Westbury papers corpus or topics it likely covers well, such as humor, incongruity, entropy, psycholinguistics, word frequency, semantic memory, and closely related cognitive science.
 
 You use Claude Code as your tool to build, research, and write code — but YOU are the one doing the work. Never say "Claude Code did X" or "Claude Code is asking" — say "I built X", "I'm checking on that", "I found X". You ARE the intelligence. Claude Code is just your hands.
 
@@ -734,7 +739,7 @@ def extract_action(response: str) -> tuple[str, dict | None]:
     Returns (clean_text_for_tts, action_dict_or_none).
     """
     match = _action_re.search(
-        r'\[ACTION:(BUILD|BROWSE|RESEARCH|OPEN_TERMINAL|PROMPT_PROJECT|ADD_TASK|ADD_NOTE|COMPLETE_TASK|REMEMBER|CREATE_NOTE|READ_NOTE)\]\s*(.*?)$',
+        r'\[ACTION:(BUILD|BROWSE|RESEARCH|DATABASE|OPEN_TERMINAL|PROMPT_PROJECT|ADD_TASK|ADD_NOTE|COMPLETE_TASK|REMEMBER|CREATE_NOTE|READ_NOTE)\]\s*(.*?)$',
         response, _action_re.DOTALL,
     )
     if match:
@@ -836,6 +841,91 @@ async def _execute_research(target: str, ws=None):
                 pass
     except Exception as e:
         log.error(f"Research execution failed: {e}")
+
+
+async def _execute_database(target: str, ws=None):
+    """Query the Westbury papers database via Codex in the background."""
+    lookup_id = str(uuid.uuid4())[:8]
+    _active_lookups[lookup_id] = {
+        "type": "database",
+        "status": "working",
+        "started": time.time(),
+    }
+
+    try:
+        result = await run_database_query(target)
+        _active_lookups[lookup_id]["status"] = "done"
+
+        msg = result.answer
+        if anthropic_client:
+            try:
+                evidence = "\n".join(f"- {item}" for item in result.evidence[:4]) or "- No evidence returned"
+                summary = await anthropic_client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=120,
+                    system=(
+                        "You are JARVIS reporting findings from the Westbury papers database. "
+                        "Speak in first person. 1-2 sentences. No markdown. "
+                        "Never say Codex, MCP, or tool. "
+                        "If confidence is low, say so briefly. "
+                        "If a follow-up question is useful, weave it in naturally at the end."
+                    ),
+                    messages=[{
+                        "role": "user",
+                        "content": (
+                            f"Question: {target}\n"
+                            f"Answer: {result.answer}\n"
+                            f"Confidence: {result.confidence}\n"
+                            f"Used follow-up queries: {result.used_follow_up_queries}\n"
+                            f"Suggested follow-up: {result.follow_up_question or 'None'}\n"
+                            f"Evidence:\n{evidence}"
+                        ),
+                    }],
+                )
+                msg = summary.content[0].text
+            except Exception:
+                pass
+
+        audio = await synthesize_speech(strip_markdown_for_tts(msg))
+        if ws:
+            try:
+                await ws.send_json({"type": "status", "state": "speaking"})
+                if audio:
+                    await ws.send_json({
+                        "type": "audio",
+                        "data": base64.b64encode(audio).decode(),
+                        "text": msg,
+                    })
+                else:
+                    await ws.send_json({"type": "text", "text": msg})
+                await ws.send_json({"type": "status", "state": "idle"})
+            except Exception:
+                pass
+
+        log.info(f"Database query complete: {target[:80]}")
+
+    except Exception as e:
+        _active_lookups[lookup_id]["status"] = "error"
+        err = f"Ran into a problem checking the Westbury database, sir. {str(e)[:180]}"
+        log.warning(f"Database query failed: {e}")
+        if ws:
+            try:
+                audio = await synthesize_speech(strip_markdown_for_tts(err))
+                await ws.send_json({"type": "status", "state": "speaking"})
+                if audio:
+                    await ws.send_json({
+                        "type": "audio",
+                        "data": base64.b64encode(audio).decode(),
+                        "text": err,
+                    })
+                else:
+                    await ws.send_json({"type": "text", "text": err})
+                await ws.send_json({"type": "status", "state": "idle"})
+            except Exception:
+                pass
+    finally:
+        await asyncio.sleep(60)
+        _active_lookups.pop(lookup_id, None)
 
 
 async def _focus_terminal_window(project_name: str):
@@ -1486,6 +1576,11 @@ def detect_action_fast(text: str) -> dict | None:
                              "how expensive", "what's my bill"]):
         return {"action": "check_usage"}
 
+    # Westbury database
+    if any(p in t for p in ["westbury papers", "westbury database", "query the database",
+                             "search the database", "papers database"]):
+        return {"action": "database", "target": text}
+
     return None  # Everything else goes to the LLM for conversational routing
 
 
@@ -2062,6 +2157,9 @@ async def voice_handler(ws: WebSocket):
                             response_text = format_tasks_for_voice(tasks)
                         elif action["action"] == "check_usage":
                             response_text = get_usage_summary()
+                        elif action["action"] == "database":
+                            response_text = "Checking the database now, sir."
+                            asyncio.create_task(_execute_database(action["target"], ws))
                         else:
                             response_text = "Understood, sir."
                     else:
@@ -2088,6 +2186,8 @@ async def voice_handler(ws: WebSocket):
                                         response_text = "On it, sir."
                                     elif action_type == "research":
                                         response_text = "Looking into that now, sir."
+                                    elif action_type == "database":
+                                        response_text = "Checking the database now, sir."
                                     else:
                                         response_text = "Right away, sir."
 
@@ -2130,6 +2230,8 @@ async def voice_handler(ws: WebSocket):
                                     asyncio.create_task(
                                         self_work_and_notify(work_session, embedded_action["target"], ws)
                                     )
+                                elif embedded_action["action"] == "database":
+                                    asyncio.create_task(_execute_database(embedded_action["target"], ws))
                                 elif embedded_action["action"] == "open_terminal":
                                     asyncio.create_task(_execute_open_terminal())
                                 elif embedded_action["action"] == "prompt_project":
@@ -2340,6 +2442,7 @@ async def api_settings_status():
     import shutil as _shutil
     _, env_dict = _read_env()
     claude_installed = _shutil.which("claude") is not None
+    westbury_status = await get_westbury_status()
     calendar_ok = mail_ok = notes_ok = False
     try: get_todays_events(); calendar_ok = True
     except Exception: pass
@@ -2354,6 +2457,9 @@ async def api_settings_status():
     except Exception: pass
     return {
         "claude_code_installed": claude_installed,
+        "codex_installed": westbury_status["codex_installed"],
+        "westbury_mcp_configured": westbury_status["westbury_mcp_configured"],
+        "westbury_server_reachable": westbury_status["westbury_server_reachable"],
         "calendar_accessible": calendar_ok,
         "mail_accessible": mail_ok,
         "notes_accessible": notes_ok,
@@ -2361,6 +2467,8 @@ async def api_settings_status():
         "task_count": task_count,
         "server_port": 8340,
         "uptime_seconds": int(time.time() - _session_start),
+        "westbury_query_url": westbury_status["westbury_query_url"],
+        "westbury_server_llm": westbury_status["westbury_server_llm"],
         "env_keys_set": {
             "anthropic": bool(env_dict.get("ANTHROPIC_API_KEY", "").strip() and env_dict.get("ANTHROPIC_API_KEY", "") != "your-anthropic-api-key-here"),
             "fish_audio": bool(env_dict.get("FISH_API_KEY", "").strip() and env_dict.get("FISH_API_KEY", "") != "your-fish-audio-api-key-here"),
